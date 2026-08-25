@@ -50,12 +50,12 @@ const makeSource = (source: string | ast.SourceFile) => {
   })
 }
 
-const expectFailure = <A>(
+const expectCheckResult = <A>(
   config: Partial<Configuration.ConfigurationShape>,
   sourceText: string,
   parser: Effect.Effect<A, never, Parser.Source | Configuration.Configuration | Path.Path>,
   checker: (a: A) => Effect.Effect<Array<string>, never, Configuration.Configuration | Parser.Source>,
-  failure: ReadonlyArray<string>
+  expected: ReadonlyArray<string>
 ) => {
   return Effect.gen(function*() {
     const actual = yield* Effect.exit(parser.pipe(
@@ -65,14 +65,14 @@ const expectFailure = <A>(
       Effect.provide(Path.layer)
     ))
     assert.ok(actual._tag === "Success")
-    assert.deepStrictEqual(actual.value, failure)
+    assert.deepStrictEqual(actual.value, expected)
   })
 }
 
 describe("Checker", () => {
   describe("checkFunctions", () => {
     it.effect("should raise an error if `@since` tag is missing", () =>
-      expectFailure(
+      expectCheckResult(
         {},
         `
 /** @since 1.0.0 */
@@ -93,11 +93,65 @@ export function b() {}
           "  7 |         "
         ]
       ))
+
+    it.effect("accepts a TypeScript fence in the description when examples are enforced", () =>
+      expectCheckResult(
+        { enforceExamples: true },
+        `
+/**
+ * Description.
+ *
+ * **Example** (Title)
+ *
+ * \`\`\`ts
+ * const value = 1
+ * \`\`\`
+ *
+ * @since 1.0.0
+ */
+export function a() {}
+        `,
+        Parser.parseFunctions,
+        Checker.checkFunctions,
+        []
+      ))
+
+    it.effect("requires an example when the description has no fence", () =>
+      expectCheckResult(
+        { enforceExamples: true },
+        "/** Description.\n * @since 1.0.0\n */\nexport function a() {}",
+        Parser.parseFunctions,
+        Checker.checkFunctions,
+        [
+          "Missing examples in file /test.ts:\n" +
+          "\n" +
+          "  2 |  * @since 1.0.0\n" +
+          "  3 |  */\n" +
+          "> 4 | export function a() {}\n" +
+          "    |  ^"
+        ]
+      ))
+
+    it.effect("does not count a non-TypeScript fence as an example", () =>
+      expectCheckResult(
+        { enforceExamples: true },
+        "/** Description.\n * ```json\n * {}\n * ```\n * @since 1.0.0\n */\nexport function a() {}",
+        Parser.parseFunctions,
+        Checker.checkFunctions,
+        [
+          "Missing examples in file /test.ts:\n" +
+          "\n" +
+          "  5 |  * @since 1.0.0\n" +
+          "  6 |  */\n" +
+          "> 7 | export function a() {}\n" +
+          "    |  ^"
+        ]
+      ))
   })
 
   describe("checkExports", () => {
     it.effect("should raise an error if `@since` tag is missing", () =>
-      expectFailure(
+      expectCheckResult(
         {},
         "export { a }",
         Parser.parseExports,
@@ -113,7 +167,7 @@ export function b() {}
 
   describe("checkNamespaces", () => {
     it.effect("should raise an error if `@since` tag is missing", () =>
-      expectFailure(
+      expectCheckResult(
         {},
         "export namespace A {}",
         Parser.parseNamespaces,
@@ -127,7 +181,7 @@ export function b() {}
       ))
 
     it.effect("should raise an error if `@since` tag is missing on a nested interface", () =>
-      expectFailure(
+      expectCheckResult(
         {},
         `
       /**
@@ -152,7 +206,7 @@ export function b() {}
       ))
 
     it.effect("should raise an error if `@since` tag is missing on a nested type alias", () =>
-      expectFailure(
+      expectCheckResult(
         {},
         `
       /**
@@ -177,7 +231,7 @@ export function b() {}
       ))
 
     it.effect("should raise an error if `@since` tag is missing on a nested namespace", () =>
-      expectFailure(
+      expectCheckResult(
         {},
         `
       /**
@@ -204,7 +258,7 @@ export function b() {}
 
   describe("checkClasses", () => {
     it.effect("should raise an error if `@since` tag is missing", () =>
-      expectFailure(
+      expectCheckResult(
         {},
         `export class MyClass {}`,
         Parser.parseClasses,

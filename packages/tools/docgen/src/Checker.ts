@@ -8,6 +8,7 @@ import * as Array from "effect/Array"
 import * as Effect from "effect/Effect"
 import * as Configuration from "./Configuration.ts"
 import type * as Domain from "./Domain.ts"
+import { extractFencedCode } from "./internal/fencedCode.ts"
 import * as Parser from "./Parser.ts"
 
 const makeError = (
@@ -45,9 +46,11 @@ function checkEntry(model: Entry, options: {
       }
     }
 
-    // @example tags
+    // examples
     if (config.enforceExamples) {
-      if (model.doc.examples.length === 0) {
+      const hasDescriptionExample = model.doc.description !== undefined &&
+        extractFencedCode(model.doc.description)[0].length > 0
+      if (model.doc.examples.length === 0 && !hasDescriptionExample) {
         errors = errors.concat(makeError(
           source,
           model.position,
